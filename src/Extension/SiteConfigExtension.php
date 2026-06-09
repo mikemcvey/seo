@@ -19,11 +19,11 @@ use SilverStripe\Forms\HeaderField;
 use SilverStripe\Forms\LiteralField;
 use SilverStripe\Forms\TextareaField;
 use SilverStripe\Forms\TextField;
-use SilverStripe\ORM\DataExtension;
+use SilverStripe\Core\Extension;
 use SilverStripers\SEO\Model\MetaTitleTemplate;
 use SilverStripers\SEO\Model\Variable;
 
-class SiteConfigExtension extends DataExtension
+class SiteConfigExtension extends Extension
 {
 
     private static $db = [
