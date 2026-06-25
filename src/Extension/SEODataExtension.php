@@ -309,15 +309,17 @@ class SEODataExtension extends Extension
 		    $fbImage = $record->getDefaultImage();
         }
 		if($fbImage && $fbImage->exists()) {
-			$tags['og:image'] = $raw ? $fbImage->AbsoluteLink() : HTML::createTag('meta', [
+			$imageUrl = Director::absoluteURL($fbImage->ScaleWidth(900)->Link());
+			$tags['og:image'] = $raw ? $imageUrl : HTML::createTag('meta', [
 				'property' => 'og:image',
-				'content' => $fbImage->AbsoluteLink()
+				'content' => $imageUrl
 			]);
 		}
 		else if ($siteConfig->GlobalSocialSharingImage()->exists()) {
-            $tags['og:image'] = $raw ? $siteConfig->GlobalSocialSharingImage()->AbsoluteLink() : HTML::createTag('meta', [
+			$imageUrl = Director::absoluteURL($siteConfig->GlobalSocialSharingImage()->ScaleWidth(900)->Link());
+            $tags['og:image'] = $raw ? $imageUrl : HTML::createTag('meta', [
                 'property' => 'og:image',
-                'content' => $siteConfig->GlobalSocialSharingImage()->AbsoluteLink()
+                'content' => $imageUrl,
             ]);
         }
 
@@ -379,6 +381,7 @@ class SEODataExtension extends Extension
 
 	public function GenerateMetaTags()
     {
+			
         $tags = $this->MetaTagCollection();
         if (is_array($tags)) {
             $tags = implode("\n", $tags);
@@ -476,7 +479,7 @@ class SEODataExtension extends Extension
 				$items = self::get_duplicates_list($duplicates);
 				$result->addFieldError('FocusKeyword', sprintf(_t(__CLASS__.'.FocusKeywordIsNotUnique',
 					'This keyword is not unique. It is also used by \'%s\''), $items),
-					ValidationResult::TYPE_ERROR, null, ValidationResult::CAST_HTML);
+					ValidationResult::TYPE_ERROR, '', ValidationResult::CAST_HTML);
 			}
 			if ($result->isValid()) {
 				$result->addFieldMessage('FocusKeyword', _t(__CLASS__.'.FocusKeywordPassed',
@@ -525,7 +528,7 @@ class SEODataExtension extends Extension
 				$result->addFieldError('MetaTitle',
 					sprintf(_t(__CLASS__.'.MetaTitleDuplicated',
 						'This title is not unique. It is also used by %s'), $items),
-					ValidationResult::TYPE_ERROR, null, ValidationResult::CAST_HTML);
+					ValidationResult::TYPE_ERROR, '', ValidationResult::CAST_HTML);
 			} else {
 				$result->addFieldMessage('MetaTitle',
 					_t(__CLASS__.'.MetaTitleUnique',
@@ -574,7 +577,7 @@ class SEODataExtension extends Extension
 				$items = self::get_duplicates_list($duplicates);
 				$result->addFieldError('MetaDescription',
 					sprintf(_t(__CLASS__.'.MetaDescriptionGoodLength', 'This description is not unique. It is also used by %s'), $items),
-					ValidationResult::TYPE_ERROR, null, ValidationResult::CAST_HTML);
+					ValidationResult::TYPE_ERROR, '', ValidationResult::CAST_HTML);
 			} else {
 				$result->addFieldMessage('MetaDescription',
 					_t(__CLASS__.'.MetaDescriptionUnique', 'This description is unique to this page'),
@@ -783,11 +786,58 @@ class SEODataExtension extends Extension
     {
         $record = $this->owner;
         $metaDescription = $record->obj('MetaDescription')->getValue();
+
+        if (!$metaDescription) {
+            $metaDescription = $this->buildElementalMetaDescription($record);
+        }
+
+        if (!$metaDescription && method_exists($record, 'getField') && $record->hasField('Teaser')) {
+            $metaDescription = $record->obj('Teaser')->getValue();
+        }
+
         if (!$metaDescription && ($fallbackField = $record->config()->get('fallback_meta_description')) && $record->obj($fallbackField)) {
             $metaDescription = $record->dbObject($fallbackField)->forTemplate();
         }
+
         $record->invokeWithExtensions('updateMetaDescription', $metaDescription);
         return Variable::process_varialbes($metaDescription);
+    }
+
+    protected function buildElementalMetaDescription(DataObject $record): ?string
+    {
+        if (!$record) {
+            return null;
+        }
+
+        $hasElementalArea = (method_exists($record, 'ElementalArea') && $record->ElementalArea())
+            || (property_exists($record, 'ElementalAreaID') && $record->ElementalAreaID);
+
+        if (!$hasElementalArea) {
+            return null;
+        }
+
+        $area = $record->ElementalArea();
+        if (!$area || !$area->Elements()) {
+            return null;
+        }
+
+        $metaDescription = '';
+        foreach ($area->Elements() as $element) {
+            if ($element->HTML) {
+                $metaDescription .= $element->dbObject('HTML');
+            }
+        }
+
+        if ($metaDescription === '') {
+            return null;
+        }
+
+        $metaDescription = str_replace(['</h2>', '</h3>', '..'], ['.</h2>', '.</h3>', '.'], $metaDescription);
+        $metaDescription = preg_replace('#<[^>]+>#', ' ', $metaDescription);
+        $metaDescription = str_replace('&nbsp;', ' ', $metaDescription);
+        $metaDescription = preg_replace('!\s+!', ' ', $metaDescription);
+
+        return DBField::create_field('HTMLText', $metaDescription)->LimitCharactersToClosestWord(150);
     }
 
     public function getStructuredDataHelpTips()
